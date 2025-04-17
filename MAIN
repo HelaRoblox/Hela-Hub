@@ -228,3 +228,16 @@ local Button = ScriptsTab:CreateButton({
       loadstring(game:HttpGet("https://raw.githubusercontent.com/HogRider123/Astralis/refs/heads/main/Aim"))()
    end,
 })
+
+local STTab = Window:CreateTab("Settings", 96957318452720) -- Title, Image
+
+STTab:CreateDropdown({
+   Name = "Current Theme",
+   Options = {"Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity"},
+   CurrentOption = {"Default"},
+   MultipleOptions = false,
+   Flag = "CurrentTheme",
+   Callback = function(Options)
+        Window.ModifyTheme(Options[1])
+   end,
+})
