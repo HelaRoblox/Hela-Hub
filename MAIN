@@ -10,50 +10,16 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-local first = false
-if hookmetamethod then
-    OldNameCall = hookmetamethod(game, "__namecall", function(Self, ...)
-        local NameCallMethod = getnamecallmethod()
-
-        if tostring(string.lower(NameCallMethod)) == "kick" and not first then
-            print("AntiKick: blocked attempt to kick you.")
-            return nil
-        end
-
-        return OldNameCall(Self, ...)
-    end)
-    if not First then
-        First = true
-    end
-else
-    warn("AntiKick: unsupported executor, missing hookmetamethod function.")
-    return
-end
-
-if not success then
-    success, err = pcall(function()
-        Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-    end)
-end
-
-if not success then
-    Rayfield = loadstring(game:HttpGet('https://pastebin.com/raw/3y4j5tY7'))()
-end
-
--- Force UI visibility (anti-anti-cheat)
-for i = 1, 3 do
-    game:GetService("VirtualInputManager"):SendKeyEvent(true, 122, false, game)
-    game:GetService("VirtualInputManager"):SendKeyEvent(false, 122, false, game)
-    wait(0.1)
-end
+-- easy right :pensive:
 
 local Window = Rayfield:CreateWindow({
    Name = " Noctalis Hub | Main ",
    LoadingTitle = "🔫 Noctalis Hub 💥",
    LoadingSubtitle = "by Noctalis",
-   Theme = "DarkBlue", -- Check https://docs.sirius.menu/rayfield/configuration/themes
+   Icon = 71352027460510, -- Icon in Topbar. Can use Lucide Icons (string) or Roblox Image (number). 0 to use no icon (default).
+   Theme = "AmberGlow", -- Check https://docs.sirius.menu/rayfield/configuration/themes
    ConfigurationSaving = {
-      Enabled = true,
+      Enabled = false,
       FolderName = NoctalisHub, -- Create a custom folder for your hub/game
       FileName = "Noctalis-Save"
       
@@ -207,29 +173,174 @@ TPTab:CreateToggle({
     end
 })
 
+-- ESP Variables
+local ESPEnabled = false
+local ESPInstances = {}
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+
+-- Function to get team color (white if no team)
+local function getTeamColor(player)
+    if player.Team then
+        return player.TeamColor.Color
+    end
+    return Color3.new(1, 1, 1) -- White if no team
+end
+
+-- Function to create ESP for a player
+local function createESP(player)
+    if player == LocalPlayer then return end -- Don't ESP yourself
+    
+    local espData = {
+        Player = player,
+        Highlight = nil,
+        Box = nil,
+        Connections = {}
+    }
+    
+    local function applyESP(character)
+        -- Clean up existing ESP
+        if espData.Highlight then
+            espData.Highlight:Destroy()
+            espData.Highlight = nil
+        end
+        if espData.Box then
+            espData.Box:Destroy()
+            espData.Box = nil
+        end
+        for _, conn in ipairs(espData.Connections) do
+            conn:Disconnect()
+        end
+        espData.Connections = {}
+        
+        -- Wait for character to fully load
+        repeat task.wait() until character:FindFirstChild("Humanoid")
+        local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+        
+        -- Try to create limb highlight first
+        local highlight = Instance.new("Highlight")
+        highlight.Name = player.Name .. "_ESP_Highlight"
+        highlight.OutlineTransparency = 0
+        highlight.FillTransparency = 0.5
+        highlight.OutlineColor = Color3.new(0, 0, 0)
+        highlight.FillColor = getTeamColor(player)
+        highlight.Adornee = character
+        highlight.Parent = character
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        
+        -- Check if limbs are visible
+        local limbsVisible = false
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Transparency < 1 then
+                limbsVisible = true
+                break
+            end
+        end
+        
+        if limbsVisible then
+            -- Use highlight if limbs are visible
+            espData.Highlight = highlight
+            
+            -- Track for new parts being added
+            table.insert(espData.Connections, character.DescendantAdded:Connect(function(descendant)
+                if descendant:IsA("BasePart") then
+                    descendant.LocalTransparencyModifier = 0
+                end
+            end))
+        else
+            -- Fall back to box if limbs are invisible
+            highlight:Destroy()
+            
+            local box = Instance.new("BoxHandleAdornment")
+            box.Name = player.Name .. "_ESP_Box"
+            box.Adornee = humanoidRootPart
+            box.AlwaysOnTop = true
+            box.ZIndex = 10
+            box.Size = Vector3.new(4, 6, 4)
+            box.Transparency = 0.5
+            box.Color3 = getTeamColor(player)
+            box.Parent = character
+            
+            espData.Box = box
+        end
+        
+        -- Track team changes
+        table.insert(espData.Connections, player:GetPropertyChangedSignal("Team"):Connect(function()
+            local color = getTeamColor(player)
+            if espData.Highlight then
+                espData.Highlight.FillColor = color
+            end
+            if espData.Box then
+                espData.Box.Color3 = color
+            end
+        end))
+        
+        -- Track character changes
+        table.insert(espData.Connections, player.CharacterAdded:Connect(function(newCharacter)
+            if ESPEnabled then
+                applyESP(newCharacter)
+            end
+        end))
+    end
+    
+    -- Apply to existing character
+    if player.Character then
+        applyESP(player.Character)
+    else
+        table.insert(espData.Connections, player.CharacterAdded:Connect(function(character)
+            if ESPEnabled then
+                applyESP(character)
+            end
+        end))
+    end
+    
+    table.insert(ESPInstances, espData)
+    return espData
+end
+
+-- Function to toggle ESP
+local function toggleESP(enable)
+    ESPEnabled = enable
+    if enable then
+        -- Create ESP for existing players
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                createESP(player)
+            end
+        end
+        
+        -- Connect to new players
+        Players.PlayerAdded:Connect(function(player)
+            if ESPEnabled then
+                createESP(player)
+            end
+        end)
+    else
+        -- Remove all ESP
+        for _, espData in pairs(ESPInstances) do
+            if espData.Highlight then
+                espData.Highlight:Destroy()
+            end
+            if espData.Box then
+                espData.Box:Destroy()
+            end
+            for _, conn in ipairs(espData.Connections) do
+                conn:Disconnect()
+            end
+        end
+        ESPInstances = {}
+    end
+end
+
+-- Example usage in your Toggle:
 TPTab:CreateToggle({
-    Name = "ESP (Team Colors)",
+    Name = "Smart ESP (Limbs or Box)",
     CurrentValue = false,
     Callback = function(Value)
-        ESPEnabled = Value
-        if Value then
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.Character then
-                    createESP(player)
-                end
-            end
-            Players.PlayerAdded:Connect(function(player)
-                createESP(player)
-            end)
-        else
-            for _, highlight in pairs(ESPHighlights) do
-                highlight:Destroy()
-            end
-            ESPHighlights = {}
-        end
+        toggleESP(Value)
     end
 })
-
 local Input = TPTab:CreateInput({
    Name = "Teleport Input",
    CurrentValue = "",
@@ -302,72 +413,148 @@ local Button = ScriptsTab:CreateButton({
 local FLTab = Window:CreateTab("Fly", 2189714456) -- Title, Image
 local Section = FLTab:CreateSection("Flying")
 
-local Players = game:GetService("Players")
+-- TRIPPY FLIGHT SCRIPT
+local flyEnabled = false
+local flySpeed = 50
+local bodyVelocity, flyGyro, flyConnection, tripConnection
+local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local player = Players.LocalPlayer
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
-local flying = false
-local flySpeed = 5
-local flyConnection
+-- Function to make player trip/stumble
+local function triggerTrip()
+    if not flyEnabled or not bodyVelocity or not flyGyro then return end
+    
+    -- Random tripping effect
+    local tripPower = math.random(5, 15)
+    local tripDuration = math.random(0.5, 1.5)
+    
+    -- Apply random force to simulate tripping
+    bodyVelocity.Velocity = Vector3.new(
+        math.random(-tripPower, tripPower),
+        math.random(-5, -2), -- Always makes you dip down
+        math.random(-tripPower, tripPower)
+    )
+    
+    -- Temporarily disable gyro for stumbling effect
+    flyGyro.MaxTorque = Vector3.new(0, 0, 0)
+    task.wait(tripDuration)
+    
+    -- Restore flight controls
+    if flyGyro then
+        flyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    end
+end
 
+local function toggleFlight(enable)
+    flyEnabled = enable
+    
+    if enable then
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+        
+        -- Clean up previous instances
+        if bodyVelocity then bodyVelocity:Destroy() end
+        if flyGyro then flyGyro:Destroy() end
+        
+        -- Create flight controls
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bodyVelocity.P = 1000
+        bodyVelocity.Parent = humanoidRootPart
+        
+        flyGyro = Instance.new("BodyGyro")
+        flyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        flyGyro.P = 10000
+        flyGyro.D = 500
+        flyGyro.CFrame = humanoidRootPart.CFrame
+        flyGyro.Parent = humanoidRootPart
+        
+        -- Flight control loop
+        flyConnection = RunService.Heartbeat:Connect(function()
+            if not flyEnabled or not bodyVelocity or not flyGyro then return end
+            
+            local cam = workspace.CurrentCamera
+            local moveVec = Vector3.new()
+            
+            -- WASD Movement
+            if UIS:IsKeyDown(Enum.KeyCode.W) then
+                moveVec += cam.CFrame.LookVector
+            end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then
+                moveVec -= cam.CFrame.LookVector
+            end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then
+                moveVec += cam.CFrame.RightVector
+            end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then
+                moveVec -= cam.CFrame.RightVector
+            end
+            
+            -- Normalize movement
+            if moveVec.Magnitude > 0 then
+                moveVec = moveVec.Unit * flySpeed
+            end
+            
+            -- Vertical Movement
+            local verticalSpeed = 0
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then
+                verticalSpeed = flySpeed
+            elseif UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
+                verticalSpeed = -flySpeed
+            end
+            
+            -- Apply movement
+            bodyVelocity.Velocity = Vector3.new(moveVec.X, verticalSpeed, moveVec.Z)
+            flyGyro.CFrame = cam.CFrame
+        end)
+        
+        -- Random tripping effect
+        tripConnection = RunService.Heartbeat:Connect(function()
+            if flyEnabled and math.random(1, 500) == 1 then -- ~1/500 chance per frame
+                triggerTrip()
+            end
+        end)
+        
+        -- Handle character respawns
+        LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+            if flyEnabled then
+                toggleFlight(false)
+                task.wait(0.5)
+                toggleFlight(true)
+            end
+        end)
+    else
+        -- Clean up
+        if bodyVelocity then bodyVelocity:Destroy() end
+        if flyGyro then flyGyro:Destroy() end
+        if flyConnection then flyConnection:Disconnect() end
+        if tripConnection then tripConnection:Disconnect() end
+    end
+end
+
+-- FLIGHT TOGGLE
 FLTab:CreateToggle({
-    Name = "Toggle Flight (WASD + Space/Shift)",
+    Name = "🌀 Trippy Flight (WASD + Space/Shift)",
     CurrentValue = false,
     Callback = function(Value)
-        flyEnabled = Value
-        
-        if Value then
-            bodyVelocity = Instance.new("BodyVelocity")
-            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            bodyVelocity.MaxForce = Vector3.new(10000, 10000, 10000)
-            bodyVelocity.Parent = LocalPlayer.Character.HumanoidRootPart
-            
-            -- Flight controls
-            local cam = workspace.CurrentCamera
-            RunService.Heartbeat:Connect(function()
-                if flyEnabled and bodyVelocity then
-                    local moveVec = Vector3.new()
-                    
-                    if UIS:IsKeyDown(Enum.KeyCode.W) then
-                        moveVec = moveVec + cam.CFrame.LookVector
-                    end
-                    if UIS:IsKeyDown(Enum.KeyCode.S) then
-                        moveVec = moveVec - cam.CFrame.LookVector
-                    end
-                    if UIS:IsKeyDown(Enum.KeyCode.D) then
-                        moveVec = moveVec + cam.CFrame.RightVector
-                    end
-                    if UIS:IsKeyDown(Enum.KeyCode.A) then
-                        moveVec = moveVec - cam.CFrame.RightVector
-                    end
-                    
-                    moveVec = moveVec * 50
-                    bodyVelocity.Velocity = Vector3.new(moveVec.X, bodyVelocity.Velocity.Y, moveVec.Z)
-                    
-                    if UIS:IsKeyDown(Enum.KeyCode.Space) then
-                        bodyVelocity.Velocity = Vector3.new(bodyVelocity.Velocity.X, 50, bodyVelocity.Velocity.Z)
-                    elseif UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
-                        bodyVelocity.Velocity = Vector3.new(bodyVelocity.Velocity.X, -50, bodyVelocity.Velocity.Z)
-                    end
-                end
-            end)
-        elseif bodyVelocity then
-            bodyVelocity:Destroy()
-            bodyVelocity = nil
-        end
+        toggleFlight(Value)
     end
 })
 
-local Slider = FLTab:CreateSlider({
-   Name = "Fly Speed",
-   Range = {0, 1000},
-   Increment = 1,
-   Suffix = "Speed",
-   CurrentValue = 10,
-   Flag = "FlySpeedSlider",
-   Callback = function(Value)
-       flySpeed = Value
-   end,
+-- SPEED SLIDER
+FLTab:CreateSlider({
+    Name = "⚡ Flight Speed",
+    Range = {1, 200},
+    Increment = 1,
+    Suffix = "Speed",
+    CurrentValue = 50,
+    Flag = "FlySpeedSlider",
+    Callback = function(Value)
+        flySpeed = Value
+    end
 })
 
 
@@ -377,11 +564,10 @@ local STTab = Window:CreateTab("Settings", 96957318452720) -- Title, Image
 STTab:CreateDropdown({
    Name = "Current Theme",
    Options = {"Default", "AmberGlow", "Amethyst", "Bloom", "DarkBlue", "Green", "Light", "Ocean", "Serenity"},
-   CurrentOption = {"Default"},
+   CurrentOption = {"AmberGlow"},
    MultipleOptions = false,
    Flag = "CurrentTheme",
    Callback = function(Options)
         Window.ModifyTheme(Options[1])
    end,
 })
-
