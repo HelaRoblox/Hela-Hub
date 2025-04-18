@@ -160,6 +160,41 @@ local Toggle = MainTab:CreateToggle({
 
 local TPTab = Window:CreateTab("Others", 13451653612) -- Title, Image
 
+TPTab:CreateToggle({
+    Name = "X-Ray Vision",
+    CurrentValue = false,
+    Callback = function(Value)
+        for _, part in pairs(workspace:GetDescendants()) do
+            if part:IsA("BasePart") and not part.Parent:FindFirstChildOfClass("Humanoid") then
+                part.LocalTransparencyModifier = Value and 0.7 or 0
+            end
+        end
+    end
+})
+
+TPTab:CreateToggle({
+    Name = "ESP (Team Colors)",
+    CurrentValue = false,
+    Callback = function(Value)
+        ESPEnabled = Value
+        if Value then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character then
+                    createESP(player)
+                end
+            end
+            Players.PlayerAdded:Connect(function(player)
+                createESP(player)
+            end)
+        else
+            for _, highlight in pairs(ESPHighlights) do
+                highlight:Destroy()
+            end
+            ESPHighlights = {}
+        end
+    end
+})
+
 local Input = TPTab:CreateInput({
    Name = "Teleport Input",
    CurrentValue = "",
@@ -240,49 +275,54 @@ local flying = false
 local flySpeed = 5
 local flyConnection
 
-local Toggle = FLTab:CreateToggle({
-   Name = "Fly",
-   CurrentValue = false,
-   Flag = "FlyToggle",
-   Callback = function(Value)
-       local Character = player.Character or player.CharacterAdded:Wait()
-       local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-
-       if Value then
-           flying = true
-
-           local BodyGyro = Instance.new("BodyGyro")
-           BodyGyro.P = 9e4
-           BodyGyro.maxTorque = Vector3.new(9e9, 9e9, 9e9)
-           BodyGyro.CFrame = HumanoidRootPart.CFrame
-           BodyGyro.Parent = HumanoidRootPart
-
-           local BodyVelocity = Instance.new("BodyVelocity")
-           BodyVelocity.velocity = Vector3.new(0, 0, 0)
-           BodyVelocity.maxForce = Vector3.new(9e9, 9e9, 9e9)
-           BodyVelocity.Parent = HumanoidRootPart
-
-           flyConnection = RunService.RenderStepped:Connect(function()
-               if flying then
-                   BodyGyro.CFrame = workspace.CurrentCamera.CFrame
-                   BodyVelocity.velocity = workspace.CurrentCamera.CFrame.LookVector * flySpeed
-               end
-           end)
-
-       else
-           flying = false
-           if flyConnection then
-               flyConnection:Disconnect()
-               flyConnection = nil
-           end
-           for _, v in pairs(HumanoidRootPart:GetChildren()) do
-               if v:IsA("BodyGyro") or v:IsA("BodyVelocity") then
-                   v:Destroy()
-               end
-           end
-       end
-   end,
+FLTab:CreateToggle({
+    Name = "Toggle Flight (WASD + Space/Shift)",
+    CurrentValue = false,
+    Callback = function(Value)
+        flyEnabled = Value
+        
+        if Value then
+            bodyVelocity = Instance.new("BodyVelocity")
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            bodyVelocity.MaxForce = Vector3.new(10000, 10000, 10000)
+            bodyVelocity.Parent = LocalPlayer.Character.HumanoidRootPart
+            
+            -- Flight controls
+            local cam = workspace.CurrentCamera
+            RunService.Heartbeat:Connect(function()
+                if flyEnabled and bodyVelocity then
+                    local moveVec = Vector3.new()
+                    
+                    if UIS:IsKeyDown(Enum.KeyCode.W) then
+                        moveVec = moveVec + cam.CFrame.LookVector
+                    end
+                    if UIS:IsKeyDown(Enum.KeyCode.S) then
+                        moveVec = moveVec - cam.CFrame.LookVector
+                    end
+                    if UIS:IsKeyDown(Enum.KeyCode.D) then
+                        moveVec = moveVec + cam.CFrame.RightVector
+                    end
+                    if UIS:IsKeyDown(Enum.KeyCode.A) then
+                        moveVec = moveVec - cam.CFrame.RightVector
+                    end
+                    
+                    moveVec = moveVec * 50
+                    bodyVelocity.Velocity = Vector3.new(moveVec.X, bodyVelocity.Velocity.Y, moveVec.Z)
+                    
+                    if UIS:IsKeyDown(Enum.KeyCode.Space) then
+                        bodyVelocity.Velocity = Vector3.new(bodyVelocity.Velocity.X, 50, bodyVelocity.Velocity.Z)
+                    elseif UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
+                        bodyVelocity.Velocity = Vector3.new(bodyVelocity.Velocity.X, -50, bodyVelocity.Velocity.Z)
+                    end
+                end
+            end)
+        elseif bodyVelocity then
+            bodyVelocity:Destroy()
+            bodyVelocity = nil
+        end
+    end
 })
+
 local Slider = FLTab:CreateSlider({
    Name = "Fly Speed",
    Range = {0, 1000},
